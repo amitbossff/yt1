@@ -16,35 +16,43 @@
       font-family: 'Segoe UI', sans-serif;
       padding: 20px;
     }
+
     h2 {
       text-align: center;
       color: #ff4d4d;
     }
-    input, button {
+
+    input {
+      width: 100%;
       padding: 10px;
+      margin-bottom: 10px;
       font-size: 15px;
       border-radius: 8px;
       border: none;
       outline: none;
-    }
-    input {
-      width: 100%;
-      margin-bottom: 10px;
       background: #fff;
       color: #000;
     }
+
     input::placeholder {
       color: #888;
     }
+
     button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
       cursor: pointer;
       background: #ff2d55;
       color: white;
       font-weight: bold;
+      font-size: 15px;
     }
+
     button:hover {
       background: #cc0033;
     }
+
     .video-block {
       background: rgba(255,255,255,0.06);
       border-left: 4px solid #ff4d4d;
@@ -53,14 +61,17 @@
       margin-bottom: 15px;
       position: relative;
     }
+
     .video-block.success {
       border-left: 4px solid #2ecc71;
       box-shadow: 0 0 0 2px #2ecc71;
     }
+
     .video-block.error {
       border-left: 4px solid #e74c3c;
       box-shadow: 0 0 0 2px #e74c3c;
     }
+
     .delete-btn {
       position: absolute;
       bottom: 8px;
@@ -71,10 +82,12 @@
       background: transparent;
       border: none;
     }
+
     .video-top {
       display: flex;
       align-items: center;
     }
+
     .thumb {
       width: 90px;
       height: 90px;
@@ -83,19 +96,23 @@
       margin-right: 12px;
       cursor: pointer;
     }
+
     .video-title {
       font-size: 14px;
       font-weight: 500;
     }
+
     .video-serial {
       color: #f1c40f;
       font-weight: bold;
       margin-right: 6px;
     }
+
     .not-found {
       color: #ff6b6b;
       font-weight: bold;
     }
+
     #frameContainer {
       border: 2px solid #444;
       border-radius: 12px;
@@ -105,10 +122,51 @@
       max-height: 500px;
       overflow-y: auto;
     }
+
     #loader {
       text-align: center;
       margin-top: 10px;
       color: #ccc;
+    }
+
+    #customPopup {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+    }
+
+    #popupContent {
+      background: #2ecc71;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-weight: bold;
+      border: 2px solid #2ecc71;
+    }
+
+    #confirmModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 99999;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #confirmModalContent {
+      background: #222;
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 300px;
+      width: 90%;
+      text-align: center;
+      border: 2px solid #ff4d4d;
     }
   </style>
 </head>
@@ -131,6 +189,22 @@
 
 <div id="frameContainer">
   <div id="results" class="result"></div>
+</div>
+
+<!-- Popup -->
+<div id="customPopup" style="display: none;">
+  <div id="popupContent"></div>
+</div>
+
+<!-- Confirm Modal -->
+<div id="confirmModal">
+  <div id="confirmModalContent">
+    <p id="confirmText">Are you sure?</p>
+    <div style="margin-top: 15px;">
+      <button id="confirmYes" style="background:#ff2d55;">Yes</button>
+      <button id="confirmNo" style="background:#666;">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -167,135 +241,121 @@
   }
 
   async function checkVideos() {
-  const docs = window.allYTDocs || [];
-  const lines = docs.map(d => `${d.serial} ${d.link}`);
-  const resultsDiv = document.getElementById("results");
-  const loader = document.getElementById("loader");
-  resultsDiv.innerHTML = "";
-  loader.style.display = "block";
+    const docs = window.allYTDocs || [];
+    const resultsDiv = document.getElementById("results");
+    const loader = document.getElementById("loader");
+    resultsDiv.innerHTML = "";
+    loader.style.display = "block";
 
-  const videoIdMap = {};
+    const videoIdMap = {};
 
-  const tasks = lines.map((line, i) => {
-    line = line.trim();
-    if (!line) return null;
+    const tasks = docs.map((doc, i) => {
+      const { serial, link } = doc;
+      const videoId = extractVideoID(link);
+      if (videoId) videoIdMap[videoId] = (videoIdMap[videoId] || 0) + 1;
 
-    let serial = "";
-    let url = line;
+      const block = document.createElement("div");
+      block.className = "video-block";
 
-    const match = line.match(/^(\d+)\.?\s+(https?:\/\/[^\s]+)$/);
-    if (match) {
-      serial = match[1];
-      url = match[2];
-    } else {
-      serial = (i + 1).toString();
-    }
-
-    const videoId = extractVideoID(url);
-    if (videoId) {
-      videoIdMap[videoId] = (videoIdMap[videoId] || 0) + 1;
-    }
-
-    const block = document.createElement("div");
-    block.className = "video-block";
-
-    if (!videoId) {
-      block.classList.add("error");
-      block.innerHTML = `
-        <div class="video-title">
-          <span class="video-serial">${serial}</span>
-          <span class="not-found">❌ Invalid or Not Found</span><br>
-          <a href="${url}" target="_blank">${url}</a>
-        </div>
-      `;
-      return block;
-    }
-
-    // MAIN LOGIC
-    return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
-      .then(res => res.json())
-      .then(data => {
-        block.classList.add("success");
+      if (!videoId) {
+        block.classList.add("error");
         block.innerHTML = `
-          <div class="video-top">
-            <img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" class="thumb" onclick="window.open('https://youtu.be/${videoId}', '_blank')">
-            <div class="video-info">
-              <div class="video-title">
-                <span class="video-serial">${serial}</span>${data.title}
-              </div>
-            </div>
+          <div class="video-title">
+            <span class="video-serial">${serial}</span>
+            <span class="not-found">❌ Invalid or Not Found</span><br>
+            <a href="${link}" target="_blank">${link}</a>
           </div>
         `;
-        if (videoIdMap[videoId] > 1) addDeleteButton(block, videoId, serial);
         return block;
-      })
-      .catch(async () => {
-        // oEmbed failed — fallback to YouTube API
-        const apiURL = `https://www.googleapis.com/youtube/v3/videos?part=status&id=${videoId}&key=${YT_API_KEY}`;
-        try {
-          const res = await fetch(apiURL);
-          const json = await res.json();
-          const status = json.items?.[0]?.status?.uploadStatus || 'deleted';
-          const isAvailable = status.toLowerCase() !== "deleted";
+      }
 
-          if (isAvailable) {
-            block.classList.add("success");
-            block.innerHTML = `
-              <div class="video-title">
-                <span class="video-serial">${serial}</span>
-                ✅ Available via API<br>
-                <a href="${url}" target="_blank">${url}</a>
-              </div>
-            `;
-          } else {
-            // Not found → show iframe
-            block.classList.add("error");
-            block.innerHTML = `
-              <div class="video-top">
-                <iframe width="70%" height="80px" src="https://www.youtube.com/embed/${videoId}" 
-                  frameborder="0" allowfullscreen style="border-radius: 8px;"></iframe>
-                <div class="video-info" style="margin-left: 12px;">
-                  <div class="video-title">
-                    <span class="video-serial">${serial}</span>
-                    <span class="not-found">❌ Deleted or Not Found</span>
-                  </div>
-                  <a href="${url}" target="_blank" style="font-size:12px;color:#ccc;">Watch on YouTube</a>
-                </div>
-              </div>
-            `;
-          }
-
-          if (videoIdMap[videoId] > 1) addDeleteButton(block, videoId, serial);
-          return block;
-        } catch (err) {
-          // Even API failed → fallback to iframe
-          block.classList.add("error");
+      return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+        .then(res => res.json())
+        .then(data => {
+          block.classList.add("success");
           block.innerHTML = `
             <div class="video-top">
-              <iframe width="70%" height="70px" src="https://www.youtube.com/embed/${videoId}" 
-                frameborder="0" allowfullscreen style="border-radius: 8px;"></iframe>
-              <div class="video-info" style="margin-left: 12px;">
+              <img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" class="thumb" onclick="window.open('https://youtu.be/${videoId}', '_blank')">
+              <div class="video-info">
                 <div class="video-title">
-                  <span class="video-serial">${serial}</span>
-                  <span class="not-found">❌ Not Found</span>
+                  <span class="video-serial">${serial}</span>${data.title}
                 </div>
-                <a href="${url}" target="_blank" style="font-size:12px;color:#ccc;">Watch on YouTube</a>
               </div>
             </div>
           `;
-          if (videoIdMap[videoId] > 1) addDeleteButton(block, videoId, serial);
+          if (videoIdMap[videoId] > 1) addDeleteButton(block, doc);
           return block;
-        }
+        })
+        .catch(async () => {
+          const apiURL = `https://www.googleapis.com/youtube/v3/videos?part=status&id=${videoId}&key=${YT_API_KEY}`;
+          try {
+            const res = await fetch(apiURL);
+            const json = await res.json();
+            const status = json.items?.[0]?.status?.uploadStatus || 'deleted';
+            const isAvailable = status.toLowerCase() !== "deleted";
+            block.classList.add(isAvailable ? "success" : "error");
+
+            if (isAvailable) {
+              block.innerHTML = `
+                <div class="video-title">
+                  <span class="video-serial">${serial}</span>
+                  ✅ Available<br>
+                  <a href="${link}" target="_blank">${link}</a>
+                </div>
+              `;
+            } else {
+              block.innerHTML = `
+                <div class="video-top">
+                  <iframe width="70%" height="80px" src="https://www.youtube.com/embed/${videoId}" 
+                    frameborder="0" allowfullscreen style="border-radius: 8px;"></iframe>
+                  <div class="video-info" style="margin-left: 12px;">
+                    <div class="video-title">
+                      <span class="video-serial">${serial}</span>
+                      <span class="not-found">❌ Not Found</span>
+                    </div>
+                    <a href="${link}" target="_blank" style="font-size:12px;color:#ccc;">Watch on YouTube</a>
+                  </div>
+                </div>
+              `;
+            }
+
+            if (videoIdMap[videoId] > 1) addDeleteButton(block, doc);
+            return block;
+
+          } catch (err) {
+            block.classList.add("error");
+            block.innerHTML = `
+              <div class="video-title">
+                <span class="video-serial">${serial}</span>
+                <span class="not-found">❌ Not Found</span><br>
+                <a href="${link}" target="_blank">${link}</a>
+              </div>
+            `;
+            return block;
+          }
+        });
+    });
+
+    const allBlocks = await Promise.all(tasks);
+    allBlocks.forEach(block => block && resultsDiv.appendChild(block));
+    loader.style.display = "none";
+  }
+
+  function addDeleteButton(block, doc) {
+    const deleteBtn = document.createElement("span");
+    deleteBtn.className = "delete-btn";
+    deleteBtn.textContent = "❌";
+    deleteBtn.title = "Delete from Firestore";
+
+    deleteBtn.onclick = () => {
+      showConfirm("Delete this video from Firestore?", async () => {
+        await ytCollection.doc(doc.id).delete();
+        showPopup(`🗑️ Deleted Serial #${doc.serial}`);
       });
-  });
+    };
 
-  const allBlocks = await Promise.all(tasks.map(p => p instanceof Promise ? p : Promise.resolve(p)));
-  allBlocks.forEach(block => {
-    if (block) resultsDiv.appendChild(block);
-  });
-
-  loader.style.display = "none";
-}
+    block.appendChild(deleteBtn);
+  }
 
   async function saveEntry() {
     const serial = document.getElementById("serialInput").value.trim();
@@ -309,8 +369,10 @@
       });
       document.getElementById("serialInput").value = "";
       document.getElementById("linkInput").value = "";
+      showPopup(`✅ Saved Serial #${serial}`);
     } catch (err) {
       console.error("Save error:", err);
+      showPopup("❌ Failed to save", false);
     }
   }
 
@@ -320,6 +382,7 @@
     snapshot.docs.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
     document.getElementById("results").innerHTML = "";
+    showPopup("♻️ All entries reset");
   }
 
   function searchYouTube() {
@@ -331,7 +394,41 @@
     window.open(url, "_blank");
     input.value = "";
   }
-</script>
 
+  function showPopup(message, success = true) {
+    const popup = document.getElementById("customPopup");
+    const content = document.getElementById("popupContent");
+
+    content.style.borderColor = success ? "#2ecc71" : "#e74c3c";
+    content.style.background = success ? "#2ecc71" : "#e74c3c";
+    content.innerHTML = message;
+
+    popup.style.display = "block";
+    setTimeout(() => popup.style.display = "none", 3000);
+  }
+
+  function showConfirm(message, onConfirm) {
+    const modal = document.getElementById("confirmModal");
+    const text = document.getElementById("confirmText");
+    const yesBtn = document.getElementById("confirmYes");
+    const noBtn = document.getElementById("confirmNo");
+
+    text.textContent = message;
+    modal.style.display = "flex";
+
+    const cleanup = () => {
+      modal.style.display = "none";
+      yesBtn.onclick = null;
+      noBtn.onclick = null;
+    };
+
+    yesBtn.onclick = () => {
+      cleanup();
+      onConfirm();
+    };
+
+    noBtn.onclick = cleanup;
+  }
+</script>
 </body>
 </html>
