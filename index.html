@@ -1,0 +1,415 @@
+<!-- Full HTML File (with iframe fallback instead of API key) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>🎬 Video Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    body {
+      background: #121212;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 20px;
+    }
+
+    h2 {
+      text-align: center;
+      color: #ff4d4d;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 15px;
+      border-radius: 8px;
+      border: none;
+      outline: none;
+      background: #fff;
+      color: #000;
+    }
+
+    input::placeholder {
+      color: #888;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #ff2d55;
+      color: white;
+      font-weight: bold;
+      font-size: 15px;
+    }
+
+    button:hover {
+      background: #cc0033;
+    }
+
+    .video-block {
+      background: rgba(255,255,255,0.06);
+      border-left: 4px solid #ff4d4d;
+      padding: 12px;
+      border-radius: 12px;
+      margin-bottom: 15px;
+      position: relative;
+    }
+
+    .video-block.success {
+      border-left: 4px solid #2ecc71;
+      box-shadow: 0 0 0 2px #2ecc71;
+    }
+
+    .video-block.error {
+      border-left: 4px solid #e74c3c;
+      box-shadow: 0 0 0 2px #e74c3c;
+    }
+
+    .delete-btn {
+      position: absolute;
+      bottom: 8px;
+      right: 12px;
+      font-size: 20px;
+      color: #ff4d4d;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+    }
+
+    .video-top {
+      display: flex;
+      align-items: center;
+    }
+
+    .thumb {
+      width: 90px;
+      height: 90px;
+      border-radius: 8px;
+      object-fit: cover;
+      margin-right: 12px;
+      cursor: pointer;
+    }
+
+    .video-title {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .video-serial {
+      color: #f1c40f;
+      font-weight: bold;
+      margin-right: 6px;
+    }
+
+    .not-found {
+      color: #ff6b6b;
+      font-weight: bold;
+    }
+
+    #customPopup {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+    }
+
+    #popupContent {
+      background: #2ecc71;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-weight: bold;
+      border: 2px solid #2ecc71;
+    }
+
+    #frameContainer {
+      border: 2px solid #444;
+      border-radius: 12px;
+      padding: 15px;
+      margin-top: 20px;
+      background: #1e1e1e;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    #loader {
+      text-align: center;
+      margin-top: 10px;
+      color: #ccc;
+    }
+
+    #confirmModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 99999;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #confirmModalContent {
+      background: #222;
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 300px;
+      width: 90%;
+      text-align: center;
+      border: 2px solid #ff4d4d;
+    }
+  </style>
+</head>
+<body>
+
+<h2>🎬 Video Tracker
+  <button onclick="resetAll()" style="background:#666;">♻️ Reset</button>
+</h2>
+
+<input type="text" id="searchBox" placeholder="Search YouTube (Last Hour)" />
+<button onclick="searchYouTube()">🔍 Search</button>
+
+<div style="display:flex;gap:10px;margin-top:15px;">
+  <input type="tel" id="serialInput" placeholder="Bot" style="flex:1;" />
+  <input type="text" id="linkInput" placeholder="YouTube Link" style="flex:3;" />
+  <button onclick="saveEntry()">Save</button>
+</div>
+
+<div id="loader" style="display:none;">⏳ Tracking... please wait</div>
+
+<div id="frameContainer">
+  <div id="results" class="result"></div>
+</div>
+
+<div id="customPopup" style="display: none;">
+  <div id="popupContent"></div>
+</div>
+
+<div id="confirmModal">
+  <div id="confirmModalContent">
+    <p id="confirmText">Are you sure?</p>
+    <div style="margin-top: 15px;">
+      <button id="confirmYes" style="background:#ff2d55;">Yes</button>
+      <button id="confirmNo" style="background:#666;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyDOSmFSpbsfXveaDpozsjDwTbc3yjmcAhg",
+    authDomain: "amittg-tool.firebaseapp.com",
+    projectId: "amittg-tool",
+    storageBucket: "amittg-tool.appspot.com",
+    messagingSenderId: "873427375036",
+    appId: "1:873427375036:web:315252c835a9dcf6f111b9"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const ytCollection = db.collection("youtube_links");
+
+  let debounceTimer;
+
+  ytCollection.orderBy("timestamp", "asc").onSnapshot(snapshot => {
+    const docs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      serial: parseInt(doc.data().serial),
+      link: doc.data().link
+    }));
+
+    docs.sort((a, b) => a.serial - b.serial);
+    window.allYTDocs = docs;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(checkVideos, 500);
+  });
+
+  async function saveEntry() {
+    const serial = document.getElementById("serialInput").value.trim();
+    const link = document.getElementById("linkInput").value.trim();
+    if (!serial || !link) return alert("Enter both Serial and Link.");
+
+    try {
+      await ytCollection.add({
+        serial: serial,
+        link: link,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      showPopup(`✅ Saved Serial #${serial}`);
+      document.getElementById("serialInput").value = "";
+      document.getElementById("linkInput").value = "";
+    } catch (err) {
+      console.error(err);
+      showPopup("❌ Failed to save", false);
+    }
+  }
+
+  async function resetAll() {
+    const snapshot = await ytCollection.get();
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    document.getElementById("results").innerHTML = "";
+    showPopup("♻️ All entries reset");
+  }
+
+  function searchYouTube() {
+    const input = document.getElementById('searchBox');
+    const query = input.value.trim();
+    if (!query) return alert("Please enter a search term.");
+    const encoded = encodeURIComponent(query);
+    const url = `https://www.youtube.com/results?search_query=${encoded}&sp=EgIIAQ%253D%253D`; 
+    window.open(url, "_blank");
+    input.value = "";
+    input.placeholder = "Search...";
+  }
+
+  function extractVideoID(url) {
+    const regExp = /(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|embed)\/|.*[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+    const match = url.match(regExp);
+    return match ? match[1] : null;
+  }
+
+  async function checkVideos() {
+    const docs = window.allYTDocs || [];
+    const resultsDiv = document.getElementById("results");
+    const loader = document.getElementById("loader");
+    resultsDiv.innerHTML = "";
+    loader.style.display = "block";
+
+    const videoIdMap = {};
+
+    const tasks = docs.map((doc, i) => {
+      const serial = doc.serial;
+      const url = doc.link;
+      const videoId = extractVideoID(url);
+      if (videoId) videoIdMap[videoId] = (videoIdMap[videoId] || 0) + 1;
+
+      const block = document.createElement("div");
+      block.className = "video-block";
+
+      if (!videoId) {
+        block.classList.add("error");
+        block.innerHTML = `
+          <div class="video-title">
+            <span class="video-serial">${serial}</span>
+            <span class="not-found">❌ Invalid or Not Found</span><br>
+            <a href="${url}" target="_blank">${url}</a>
+          </div>
+        `;
+        return block;
+      }
+
+      return fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+        .then(res => res.json())
+        .then(data => {
+          block.classList.add("success");
+          block.innerHTML = `
+            <div class="video-top">
+              <img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" class="thumb" onclick="window.open('https://youtu.be/${videoId}', '_blank')">
+              <div class="video-info">
+                <div class="video-title">
+                  <span class="video-serial">${serial}</span>${data.title}
+                </div>
+              </div>
+            </div>
+          `;
+
+          if (videoIdMap[videoId] > 1) addDeleteButton(block, videoId, serial);
+          return block;
+        })
+       .catch(() => {
+  block.classList.add("error");
+  block.innerHTML = `
+    <div class="video-top">
+      <iframe width="60%" height="60px" src="https://www.youtube.com/embed/${videoId}" 
+        frameborder="0" allowfullscreen style="border-radius: 8px;"></iframe>
+      <div class="video-info" style="margin-left: 12px;">
+        <div class="video-title">
+          <span class="video-serial">${serial}</span>
+          <span class="not-found">❌ Failed</span>
+        </div>
+        <a href="${url}" target="_blank" style="font-size:12px;color:#ccc;">Watch on YouTube</a>
+      </div>
+    </div>
+  `;
+  if (videoIdMap[videoId] > 1) addDeleteButton(block, videoId, serial);
+  return block;
+});
+    });
+
+    const allBlocks = await Promise.all(tasks.map(p => p instanceof Promise ? p : Promise.resolve(p)));
+    allBlocks.forEach(block => {
+      if (block) resultsDiv.appendChild(block);
+    });
+
+    loader.style.display = "none";
+  }
+
+  function addDeleteButton(block, videoId, serial) {
+    const deleteBtn = document.createElement("span");
+    deleteBtn.className = "delete-btn";
+    deleteBtn.innerHTML = "❌";
+    deleteBtn.title = "Delete from Firestore";
+    const matchDoc = window.allYTDocs.find(d => d.link.includes(videoId));
+    if (matchDoc?.id) {
+      deleteBtn.onclick = () => {
+        showConfirm("Delete this video from Firestore?", async () => {
+          await ytCollection.doc(matchDoc.id).delete();
+          showPopup(`🗑️ Deleted Serial #${serial}`);
+        });
+      };
+      block.appendChild(deleteBtn);
+    }
+  }
+
+  function showPopup(message, success = true) {
+    const popup = document.getElementById("customPopup");
+    const content = document.getElementById("popupContent");
+
+    content.style.borderColor = success ? "#2ecc71" : "#e74c3c";
+    content.style.background = success ? "#2ecc71" : "#e74c3c";
+    content.innerHTML = message;
+
+    popup.style.display = "block";
+    setTimeout(() => popup.style.display = "none", 3000);
+  }
+
+  function showConfirm(message, onConfirm) {
+    const modal = document.getElementById("confirmModal");
+    const text = document.getElementById("confirmText");
+    const yesBtn = document.getElementById("confirmYes");
+    const noBtn = document.getElementById("confirmNo");
+
+    text.textContent = message;
+    modal.style.display = "flex";
+
+    const cleanup = () => {
+      modal.style.display = "none";
+      yesBtn.onclick = null;
+      noBtn.onclick = null;
+    };
+
+    yesBtn.onclick = () => {
+      cleanup();
+      onConfirm();
+    };
+
+    noBtn.onclick = cleanup;
+  }
+</script>
+
+</body>
+</html>
